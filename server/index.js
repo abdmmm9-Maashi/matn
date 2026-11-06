@@ -468,6 +468,17 @@ function startSession(userId) {
 
 const DEV_MODE = process.env.NODE_ENV !== 'production' || process.env.DEV_OTP === '1'
 
+
+/* ================= الشركات / المؤسسات ================= */
+const companyByCode = (code) => {
+  const id = Number(String(code || '').trim())
+  if (!id) return null
+  return db.prepare("SELECT id, name FROM users WHERE id = ? AND role = 'company' AND status = 'active'").get(id) || null
+}
+const companyOf = (userId) => {
+  const u = db.prepare("SELECT id, name, role, status FROM users WHERE id = ?").get(userId)
+  return u && u.role === 'company' && u.status === 'active' ? u : null
+}
 /* الدخول/التسجيل برمز الجوال — يُوقف من الإعدادات (otp_enabled=0) */
 const phoneOtpOn = () => (db.prepare("SELECT value FROM settings WHERE key='otp_enabled'").get()?.value ?? '1') === '1'
 /* حسابات بلا جوال: نخزّن رقم داخلي يبدأ بـ x (العمود NOT NULL UNIQUE) ونعرضه فارغاً */
@@ -512,6 +523,12 @@ app.post('/api/auth/signup', (req, res) => {
   if (!b.email || !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(String(b.email).trim()))
     return res.status(400).json({ error: 'email_required' })
   const role = ['expert', 'support', 'customer'].includes(b.role) ? b.role : 'customer'
+  let companyId = null
+  if (role === 'expert') {
+    const c = companyByCode(b.company_code)
+    if (!c) return res.status(400).json({ error: 'company_code_required' })
+    companyId = c.id
+  }
   const info = db
     .prepare(
       `INSERT INTO users (phone, name, city, role, email, nationality, specialty, lat, lng, username, password_hash, last_seen, referred_by)
@@ -527,12 +544,12 @@ app.post('/api/auth/signup', (req, res) => {
     const job = trades[0]?.cat || 'AC'
     const years = Number(b.exp_years) > 0 ? Number(b.exp_years) : 0
     db.prepare(
-      `INSERT INTO experts (name, name_ar, job, city, rate, rating, reviews_count, image, phone, skills, experience, lat, lng, user_id, verify_status, has_car, trades, exp_years)
-       VALUES (?, ?, ?, ?, '150 ريال/ساعة', 4.5, 0, '/experts/ac.jpg', ?, '[]', ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+      `INSERT INTO experts (name, name_ar, job, city, rate, rating, reviews_count, image, phone, skills, experience, lat, lng, user_id, verify_status, has_car, trades, exp_years, company_id)
+       VALUES (?, ?, ?, ?, '150 ريال/ساعة', 4.5, 0, '/experts/ac.jpg', ?, '[]', ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
     ).run(name, name, job, b.city || 'الرياض', realPhone || null,
       years ? `${years} سنة` : '1 سنة',
       b.lat != null ? Number(b.lat) : null, b.lng != null ? Number(b.lng) : null, userId, b.has_car ? 1 : 0,
-      JSON.stringify(trades), b.exp_years != null ? Number(b.exp_years) : null)
+      JSON.stringify(trades), b.exp_years != null ? Number(b.exp_years) : null, companyId)
     const created = db.prepare('SELECT id FROM experts WHERE user_id = ?').get(userId)
     if (created) ensureInviteCode(created.id)
   }
@@ -608,6 +625,14 @@ app.post('/api/auth/register', authRequired, (req, res) => {
   if (!name) return res.status(400).json({ error: 'name_required' })
   const role = ['expert', 'support', 'customer'].includes(b.role) ? b.role : 'customer'
 
+  let companyId = null
+  if (role === 'expert') {
+    const existingExp = db.prepare('SELECT company_id FROM experts WHERE user_id = ?').get(req.userId)
+    const c = companyByCode(b.company_code) || (existingExp?.company_id ? { id: existingExp.company_id } : null)
+    if (!c) return res.status(400).json({ error: 'company_code_required' })
+    companyId = c.id
+  }
+
   db.prepare(
     `UPDATE users SET name = ?, city = ?, role = ?, email = ?, nationality = ?, specialty = ?,
       lat = ?, lng = ?, phone = COALESCE(?, phone), last_seen = datetime('now') WHERE id = ?`,
@@ -630,21 +655,21 @@ app.post('/api/auth/register', authRequired, (req, res) => {
     const existing = db.prepare('SELECT * FROM experts WHERE user_id = ?').get(req.userId)
     if (existing) {
       db.prepare(
-        `UPDATE experts SET name = ?, name_ar = ?, job = ?, city = ?, phone = ?, lat = ?, lng = ?, has_car = ?, trades = ?, exp_years = ? WHERE id = ?`,
+        `UPDATE experts SET name = ?, name_ar = ?, job = ?, city = ?, phone = ?, lat = ?, lng = ?, has_car = ?, trades = ?, exp_years = ?, company_id = COALESCE(?, company_id) WHERE id = ?`,
       ).run(name, name, job || existing.job, b.city || existing.city, b.phone || existing.phone,
         b.lat != null ? Number(b.lat) : existing.lat, b.lng != null ? Number(b.lng) : existing.lng,
         b.has_car !== undefined ? (b.has_car ? 1 : 0) : existing.has_car,
         trades ? JSON.stringify(trades) : existing.trades,
         b.exp_years != null ? Number(b.exp_years) : existing.exp_years,
-        existing.id)
+        companyId, existing.id)
     } else {
       db.prepare(
         `INSERT INTO experts (name, name_ar, job, city, rate, rating, reviews_count, image, phone, skills, experience, lat, lng, user_id, verify_status, has_car, trades, exp_years)
-         VALUES (?, ?, ?, ?, '150 ريال/ساعة', 4.5, 0, '/experts/ac.jpg', ?, '[]', ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, '150 ريال/ساعة', 4.5, 0, '/experts/ac.jpg', ?, '[]', ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
       ).run(name, name, job || 'AC', b.city || 'الرياض', b.phone || null,
         b.exp_years ? `${Number(b.exp_years)} سنة` : '1 سنة',
         b.lat != null ? Number(b.lat) : null, b.lng != null ? Number(b.lng) : null, req.userId, b.has_car ? 1 : 0,
-        JSON.stringify(trades || []), b.exp_years != null ? Number(b.exp_years) : null)
+        JSON.stringify(trades || []), b.exp_years != null ? Number(b.exp_years) : null, companyId)
       const created = db.prepare('SELECT id FROM experts WHERE user_id = ?').get(req.userId)
       if (created) ensureInviteCode(created.id)
     }
@@ -1672,7 +1697,7 @@ app.post('/api/admin/users', adminRequired, adminCan('users'), (req, res) => {
   const b = req.body || {}
   const name = String(b.name || '').trim()
   const phone = normalizePhone(b.phone)
-  const role = ['customer', 'expert', 'support'].includes(b.role) ? b.role : 'customer'
+  const role = ['customer', 'expert', 'support', 'company'].includes(b.role) ? b.role : 'customer'
   const password = String(b.password || '')
   if (!name) return res.status(400).json({ error: 'name_required' })
   if (!phone) return res.status(400).json({ error: 'phone_invalid' })
@@ -2545,6 +2570,33 @@ app.post('/api/me/delete', authRequired, (req, res) => {
 })
 
 
+
+/* ================= لوحة الشركة ================= */
+app.get('/api/company/me', authRequired, (req, res) => {
+  const c = companyOf(req.userId)
+  if (!c) return res.status(403).json({ error: 'not_company' })
+  const u = db.prepare('SELECT id, name, phone, email, city, created_at FROM users WHERE id = ?').get(c.id)
+  const count = db.prepare('SELECT COUNT(*) c FROM experts WHERE company_id = ?').get(c.id).c
+  res.json({ ...u, code: String(u.id), workers_count: count })
+})
+
+app.get('/api/company/workers', authRequired, (req, res) => {
+  const c = companyOf(req.userId)
+  if (!c) return res.status(403).json({ error: 'not_company' })
+  const rows = db.prepare(`
+    SELECT e.id, e.name, e.job, e.city, e.rating, e.reviews_count, e.image, e.verify_status,
+           COALESCE(e.company_name, '') AS company_name,
+           u.id AS user_id, u.phone, u.email, u.status AS user_status, u.last_seen,
+           COALESCE(u.stars_total, 0) AS stars_total, COALESCE(u.reviews_count, 0) AS user_reviews
+    FROM experts e JOIN users u ON u.id = e.user_id
+    WHERE e.company_id = ?
+    ORDER BY e.id DESC`).all(c.id)
+  res.json({
+    company: { id: c.id, name: c.name, code: String(c.id) },
+    count: rows.length,
+    workers: rows.map((r) => ({ ...r, phone: showPhone(r.phone) })),
+  })
+})
 
 /* ================= توثيق الإيميل (رمز بالبريد) ================= */
 async function sendEmail(to, subject, html) {
