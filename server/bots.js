@@ -25,6 +25,11 @@ const BOTS = [
 
 export function seedBots() {
   if (!demoBotsOn()) return
+  // ما نعيد إنشاء البوتات القديمة لو فيه بوتات موجودة أصلًا (بوتات التجربة المخصّصة)
+  try {
+    const have = db.prepare('SELECT COUNT(*) c FROM experts WHERE is_bot = 1').get().c
+    if (have > 0) { try { markBotCars() } catch {} ; return }
+  } catch {}
   try { markBotCars() } catch {}
   const insert = db.prepare(
     `INSERT INTO experts (name, name_ar, job, city, rate, rating, reviews_count, image, phone, skills, experience, lat, lng, is_bot, has_car)
