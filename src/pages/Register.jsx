@@ -28,6 +28,7 @@ export default function Register() {
     specialty: 'AC',
     trades: [{ cat: 'AC', subs: [] }],
     exp_years: '',
+    company_code: '',
     lat: null,
     lng: null,
     has_car: false,
@@ -58,6 +59,7 @@ export default function Register() {
     if (!form.email || !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(form.email)) return setError('أدخل بريد إلكتروني صحيح')
     if (!form.lat || !form.lng) return setError('حدد موقعك على الخريطة')
     if (form.role === 'expert' && !(form.trades || []).length) return setError('اختر تخصصاً واحداً على الأقل')
+    if (form.role === 'expert' && !String(form.company_code || '').trim()) return setError('أدخل كود المؤسسة أو الشركة')
     setBusy(true)
     try {
       let updated
@@ -76,7 +78,13 @@ export default function Register() {
       login({ ...user, ...updated, userName: updated.name || updated.username, userLocation: updated.city })
       navigate(form.role === 'expert' ? '/verify' : '/profile')
     } catch (err) {
-      setError(err.message)
+      setError(
+        err.message === 'company_code_required'
+          ? 'كود المؤسسة غير صحيح — تأكد منه أو اطلبه من شركتك'
+          : err.message === 'company_code_invalid'
+            ? 'كود المؤسسة غير صحيح'
+            : err.message
+      )
     } finally {
       setBusy(false)
     }
@@ -168,6 +176,21 @@ export default function Register() {
                 </select>
               </div>
             </div>
+
+            {form.role === 'expert' && (
+              <div>
+                <label className="text-xs font-bold text-gray-600">كود المؤسسة / الشركة *</label>
+                <input
+                  required
+                  inputMode="numeric"
+                  value={form.company_code}
+                  onChange={(e) => setForm({ ...form, company_code: e.target.value.replace(/[^0-9]/g, '') })}
+                  placeholder="مثال: 42 — اطلبه من شركتك"
+                  className="w-full mt-1 px-3 py-2.5 border border-[#E3D9BF] rounded-xl outline-none focus:border-[#006C35]"
+                />
+                <p className="text-[10px] text-gray-500 mt-1">ما يمكن التسجيل كفني بدون كود مؤسسة — كودك يربط حسابك بالشركة مباشرة.</p>
+              </div>
+            )}
 
             {form.role === 'expert' && (
               <label className="flex items-center gap-2 rounded-xl border border-[#E3D9BF] bg-[#FBF9F2] px-3 py-2.5 cursor-pointer">
