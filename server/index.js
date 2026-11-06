@@ -4145,6 +4145,41 @@ app.get('/api/version', (_req, res) => {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, at: new Date().toISOString() }))
 
+const MAINTENANCE_HTML = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مهنتي — صيانة مؤقتة</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#FBF9F2;font-family:Tahoma,Arial,sans-serif;padding:24px}
+.card{max-width:420px;width:100%;background:#fff;border:1px solid #EADFC8;border-radius:20px;padding:28px;text-align:center;
+box-shadow:0 10px 30px rgba(17,34,26,.06)}
+h1{font-size:20px;color:#11221A;margin:0 0 6px}
+p{color:#6b7280;font-size:13px;line-height:1.9;margin:0}
+.bar{height:4px;width:56px;background:#C9A227;border-radius:4px;margin:14px auto 16px}
+.t{margin-top:18px;font-size:11px;color:#9ca3af}
+</style></head><body><div class="card">
+<div style="font-size:34px">🛠️</div>
+<h1>مهنتي — تحت الصيانة</h1>
+<div class="bar"></div>
+<p>نعمل حاليًا على تحسين المنصة، وسنعود قريبًا بإذن الله.</p>
+<p>شكرًا لصبركم 🌿</p>
+<div class="t">سعداء بخدمتكم — فريق مهنتي</div>
+</div></body></html>`
+
+app.use((req, res, next) => {
+  try {
+    if (req.method !== 'GET') return next()
+    if (req.path.startsWith('/api') || req.path.startsWith('/admin') || req.path.startsWith('/assets') || req.path.startsWith('/.well-known')) return next()
+    if (/\.(png|jpg|jpeg|svg|ico|webmanifest|js|css)$/i.test(req.path)) return next()
+    const m = db.prepare("SELECT value FROM settings WHERE key = 'maintenance'").get()?.value
+    if (m === '1') {
+      res.setHeader('Retry-After', '3600')
+      return res.status(503).type('html').send(MAINTENANCE_HTML)
+    }
+  } catch {}
+  next()
+})
+
 const clientDist = path.join(__dirname, '..', 'dist')
 app.use(express.static(clientDist, { setHeaders: (res, filePath) => {
   if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-store, must-revalidate')
