@@ -68,8 +68,14 @@ export function markBotCars() {
 }
 
 // أصحاب السيارات يُرشّحون أولاً (وصول أسرع للعميل)
-const botsForRequest = (category) =>
-  db.prepare('SELECT * FROM experts WHERE job = ? AND is_bot = 1 ORDER BY has_car DESC, rating DESC').all(category)
+const botsForRequest = (category) => {
+  const exact = db
+    .prepare('SELECT * FROM experts WHERE job = ? AND is_bot = 1 ORDER BY has_car DESC, rating DESC')
+    .all(category)
+  if (exact.length) return exact
+  // بوتات التجربة تخدم كل الأقسام — نرجّع أي بوت متاح بدل ما يعلّق المزاد
+  return db.prepare('SELECT * FROM experts WHERE is_bot = 1 ORDER BY has_car DESC, rating DESC').all()
+}
 
 // السعر المرجعي: الخدمة الفرعية أولاً (لأن الأسعار تختلف من خدمة لخدمة)
 function basePrice(request) {
