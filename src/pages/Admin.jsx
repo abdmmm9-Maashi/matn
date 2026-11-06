@@ -348,6 +348,7 @@ function UserRow({ u, type, onChanged, onOpen }) {
                 <option value="customer">عميل</option>
                 <option value="expert">فني</option>
                 <option value="support">دعم فني</option>
+                <option value="company">مؤسسة / شركة</option>
               </select>
             </>
           )}
