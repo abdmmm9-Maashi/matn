@@ -1423,11 +1423,20 @@ app.post('/api/requests/:id/complete', authRequired, (req, res) => {
   if (request.status !== 'assigned') return res.status(409).json({ error: 'not_assigned' })
 
   const days = Math.max(1, Math.min(365, Number(req.body?.warranty_days) || request.warranty_days || 3))
+  const wPrice = Math.max(0, Number(req.body?.warranty_price) || 0)
   db.prepare(
     `UPDATE requests SET status = 'done', completed_at = datetime('now'), warranty_days = ?,
-      warranty_until = datetime('now', '+' || ? || ' days')
+      warranty_until = datetime('now', '+' || ? || ' days'), warranty_price = ?
      WHERE id = ?`,
-  ).run(days, days, request.id)
+  ).run(days, days, days === 30 ? wPrice : 0, request.id)
+
+  // ضمان مدفوع: يُضاف كبند يدفعه العميل (وتُخصم منه عمولة المنصة كأي عمل إضافي)
+  if (days === 30 && wPrice > 0) {
+    const label = 'ضمان شهر مدفوع (٣٠ يوم)'
+    const ex = db.prepare('SELECT id FROM request_extras WHERE request_id = ? AND title = ?').get(request.id, label)
+    if (ex) db.prepare("UPDATE request_extras SET amount = ?, status = 'pending' WHERE id = ?").run(wPrice, ex.id)
+    else db.prepare('INSERT INTO request_extras (request_id, title, amount) VALUES (?, ?, ?)').run(request.id, label, wPrice)
+  }
   const invoice = issueInvoice(request.id)
   res.json({ ...requestWithBids(request.id), invoice })
 })
