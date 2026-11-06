@@ -60,13 +60,20 @@ function ExtraPay({ requestId, extra, onPaid }) {
 
 function FinishWork({ requestId, onDone }) {
   const [days, setDays] = useState(3)
+  const [warrantyPrice, setWarrantyPrice] = useState('')
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
+  const [err, setErr] = useState('')
 
   const finish = async () => {
+    setErr('')
+    if (days === 30 && !(Number(warrantyPrice) > 0)) return setErr('حدد سعر ضمان الشهر أولاً')
     setBusy(true)
     try {
-      const updated = await api.complete(requestId, { warranty_days: days })
+      const updated = await api.complete(requestId, {
+        warranty_days: days,
+        warranty_price: days === 30 ? Number(warrantyPrice) : 0,
+      })
       onDone(updated)
       setDone(true)
     } catch {
@@ -88,8 +95,26 @@ function FinishWork({ requestId, onDone }) {
         <option value={1}>يوم واحد</option>
         <option value={3}>٣ أيام</option>
         <option value={7}>أسبوع</option>
-        <option value={30}>شهر</option>
+        <option value={30}>شهر كامل — ضمان مدفوع</option>
       </select>
+      {days === 30 && (
+        <div className="rounded-xl border border-[#C9A227] bg-[#FBF5E3] p-3 space-y-2">
+          <p className="text-[11px] font-bold text-[#8a6d13]">سعر ضمان الشهر — تحدده أنت</p>
+          <input
+            type="number"
+            min="1"
+            inputMode="numeric"
+            value={warrantyPrice}
+            onChange={(e) => setWarrantyPrice(e.target.value)}
+            placeholder="مثال: 150"
+            className="w-full px-3 py-2 border border-[#E3D9BF] rounded-lg text-sm"
+          />
+          <p className="text-[10px] text-[#8a6d13] leading-relaxed">
+            يُضاف هذا المبلغ على فاتورة العميل كبند مستقل، وتُخصم منه عمولة المنصة مثل أي عمل إضافي.
+          </p>
+        </div>
+      )}
+      {err && <p className="text-[11px] text-red-500">{err}</p>}
       <button onClick={finish} disabled={busy} className="btn-primary">
         {busy ? 'جارٍ…' : 'إنهاء العمل وإصدار الفاتورة'}
       </button>
@@ -337,8 +362,8 @@ export default function RequestDetail() {
     try {
       const res = await api.request(id)
       setData(res)
-    } catch (e) { 
-          setError(e.message)
+    } catch (e) {
+      setError(e.message)
     }
   }, [id])
 
@@ -438,6 +463,7 @@ export default function RequestDetail() {
       setError(err.message)
     }
   }
+
   const complete = async () => {
     try {
       setData(await api.complete(id))
@@ -717,7 +743,7 @@ export default function RequestDetail() {
           {data.bids_hidden ? 'سوماتك' : t('rd.bids')} ({data.bids_hidden ? data.bids_count : data.bids.length})
         </h2>
         {data.bids_hidden && (
-                <p className="text-[11px] text-[#8a6d13] bg-[#FBF5E3] border border-[#EADFC8] rounded-lg px-2 py-1.5 mb-3">
+          <p className="text-[11px] text-[#8a6d13] bg-[#FBF5E3] border border-[#EADFC8] rounded-lg px-2 py-1.5 mb-3">
             🔒 المزاد سري — تشوف سومتك فقط، ما تشوف سومات الفنيين الآخرين.
             {data.bids.length > 0 ? ` سومتك الحالية: ${data.bids[0].amount} ر.س` : ' ما لك سومة بعد.'}
           </p>
@@ -753,6 +779,13 @@ export default function RequestDetail() {
                   </span>
                 )}
                 {b.note && <p className="text-xs text-gray-500 mt-1">{b.note}</p>}
+                <button
+                  type="button"
+                  onClick={() => navigate(`/expert/${b.expert_id}`)}
+                  className="mt-1 text-[11px] font-bold text-[#006C35] underline"
+                >
+                  تفاصيل الفني وتقييمه
+                </button>
               </div>
               <div className="text-right">
                 <p className="font-extrabold text-[15px]" style={{ color: tone.text }}>{b.amount} {t('common.tnd')}</p>
@@ -1048,4 +1081,3 @@ export default function RequestDetail() {
     </div>
   )
 }
-
