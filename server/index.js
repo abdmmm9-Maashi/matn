@@ -3232,6 +3232,22 @@ function tgNotify(text) {
   if (id) tgSend(id, text).catch(() => {})
 }
 
+app.post('/api/admin/telegram/test', adminRequired, async (req, res) => {
+  const id = tgOwnerId()
+  if (!id) return res.status(400).json({ error: 'no_owner' })
+  const ok = await tgSend(id, String(req.body?.text || 'تجربة من مهنتي ✅ — رمزي شغّال'))
+  res.json({ ok, has_owner: true, bot: TG_TOKEN ? 'configured' : 'missing' })
+})
+
+app.get('/api/admin/telegram/status', adminRequired, async (req, res) => {
+  let me = null
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getMe`)
+    me = await r.json()
+  } catch (e) { me = { ok: false, error: String(e.message) } }
+  res.json({ ok: !!me?.ok, username: me?.result?.username || null, owner_set: !!tgOwnerId() })
+})
+
 app.post('/api/telegram/:secret', async (req, res) => {
   res.json({ ok: true })
   try {
