@@ -2571,6 +2571,59 @@ app.post('/api/me/delete', authRequired, (req, res) => {
 
 
 
+/* ================= بوتات التجربة (فنيون وهميون) ================= */
+const DEMO_POINTS = {
+  'جدة': { lat: 21.4858, lng: 39.1925 },
+  'خميس مشيط': { lat: 18.3061, lng: 42.7291 },
+  'الرياض': { lat: 24.7136, lng: 46.6753 },
+}
+
+app.post('/api/admin/bots/seed', adminRequired, (req, res) => {
+  const plan = Array.isArray(req.body?.bots) && req.body.bots.length
+    ? req.body.bots
+    : [{ city: 'جدة', count: 2 }, { city: 'خميس مشيط', count: 2 }]
+  const job = String(req.body?.job || 'AC')
+  const created = []
+  const insert = db.prepare(
+    `INSERT INTO experts (name, name_ar, job, city, rate, rating, reviews_count, image, phone, skills, experience, lat, lng, is_bot, has_car, verify_status)
+     VALUES (?, ?, ?, ?, '150 ريال/ساعة', ?, ?, '/experts/ac.jpg', ?, ?, '5 سنوات', ?, ?, 1, 1, 'approved')`,
+  )
+  for (const p of plan) {
+    const city = String(p.city || 'جدة')
+    const count = Math.max(1, Math.min(10, Number(p.count) || 1))
+    const base = DEMO_POINTS[city] || DEMO_POINTS['الرياض']
+    for (let i = 1; i <= count; i++) {
+      const name = `فني تجربة — ${city} ${i}`
+      const exists = db.prepare('SELECT id FROM experts WHERE name = ? AND is_bot = 1').get(name)
+      if (exists) { created.push({ id: exists.id, name, city, existing: true }); continue }
+      const jitter = () => (Math.random() - 0.5) * 0.05
+      const info = insert.run(
+        name, name, job, city,
+        4.6 + Math.round(Math.random() * 3) / 10,
+        40 + Math.floor(Math.random() * 60),
+        '+9665500' + Math.floor(10000 + Math.random() * 89999),
+        JSON.stringify(['تركيب', 'صيانة']),
+        base.lat + jitter(), base.lng + jitter(),
+      )
+      created.push({ id: Number(info.lastInsertRowid), name, city })
+    }
+  }
+  db.prepare("INSERT INTO settings (key, value) VALUES ('demo_bots_note', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run()
+  res.json({ ok: true, created, total_bots: db.prepare('SELECT COUNT(*) c FROM experts WHERE is_bot = 1').get().c })
+})
+
+app.delete('/api/admin/bots', adminRequired, (req, res) => {
+  const ids = db.prepare('SELECT id FROM experts WHERE is_bot = 1').all().map((r) => r.id)
+  const tx = db.transaction(() => {
+    for (const id of ids) {
+      try { db.prepare('DELETE FROM bids WHERE expert_id = ?').run(id) } catch {}
+      try { db.prepare('DELETE FROM experts WHERE id = ?').run(id) } catch {}
+    }
+  })
+  tx()
+  res.json({ ok: true, deleted: ids.length })
+})
+
 /* ================= لوحة الشركة ================= */
 app.get('/api/company/me', authRequired, (req, res) => {
   const c = companyOf(req.userId)
